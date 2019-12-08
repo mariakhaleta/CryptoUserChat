@@ -26,7 +26,6 @@ public class Server {
     try {
       publicKeyServer = RSAUtil.getPemPublicKey(publicKeyServerFilePath, algorithmCrypto);
       privateKeyServer = RSAUtil.getPemPrivateKey(privateKeyServerFilePath, algorithmCrypto);
-      System.out.println(publicKeyServer);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -114,10 +113,10 @@ public class Server {
       System.out.print(messageToSend);
 
       for (int i = clientsArrayList.size(); --i >= 0; ) {
-        ClientThread ct = clientsArrayList.get(i);
-        if (!ct.writeMsg(messageToSend)) {
+        ClientThread clientThread = clientsArrayList.get(i);
+        if (!clientThread.writeMsg(messageToSend)) {
           clientsArrayList.remove(i);
-          displayMessage("Disconnected Client " + ct.username + " removed from list.");
+          displayMessage("Disconnected Client " + clientThread.username + " removed from list.");
         }
       }
     }
@@ -174,6 +173,16 @@ public class Server {
 
     public void run() {
       boolean keepGoing = true;
+      try {
+        ChatMessage chatMessage = (ChatMessage) sInput.readObject();
+        String messageWithPublicKey = chatMessage.getMessage();
+        String clientPublicKey = RSAUtil.decrypt(messageWithPublicKey, privateKeyServer);
+
+        TextFileUtils.writeToJsonListClient(username, clientPublicKey);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+
       while (keepGoing) {
         try {
           chatMessage = (ChatMessage) sInput.readObject();
@@ -197,8 +206,8 @@ public class Server {
           case ChatMessage.CLIENTSONLINE:
             writeMsg("List of the users connected at " + simpleDateFormat.format(new Date()) + "\n");
             for (int i = 0; i < clientsArrayList.size(); ++i) {
-              ClientThread ct = clientsArrayList.get(i);
-              writeMsg((i + 1) + ") " + ct.username + " since " + ct.date);
+              ClientThread clientThread = clientsArrayList.get(i);
+              writeMsg((i + 1) + ") " + clientThread.username + " since " + clientThread.date);
             }
             break;
 

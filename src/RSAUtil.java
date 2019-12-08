@@ -1,18 +1,15 @@
 import sun.misc.BASE64Decoder;
 
-import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class RSAUtil {
 
@@ -46,20 +43,28 @@ public class RSAUtil {
     return privateKey;
   }
 
-  public static byte[] encrypt(String data, String publicKey) throws BadPaddingException, IllegalBlockSizeException, InvalidKeyException, NoSuchPaddingException, NoSuchAlgorithmException {
-    Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-    cipher.init(Cipher.ENCRYPT_MODE, getPublicKey(publicKey));
-    return cipher.doFinal(data.getBytes());
+  public static String encrypt(String plainText, PublicKey publicKey) throws Exception {
+    Cipher encryptCipher = Cipher.getInstance("RSA");
+    encryptCipher.init(Cipher.ENCRYPT_MODE, publicKey);
+
+    byte[] cipherText = encryptCipher.doFinal(plainText.getBytes(UTF_8));
+
+    return Base64.getEncoder().encodeToString(cipherText);
   }
 
-  public static String decrypt(byte[] data, PrivateKey privateKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException {
-    Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-    cipher.init(Cipher.DECRYPT_MODE, privateKey);
-    return new String(cipher.doFinal(data));
+  public static String decrypt(String cipherText, PrivateKey privateKey) throws Exception {
+    byte[] bytes = Base64.getDecoder().decode(cipherText);
+
+    Cipher decriptCipher = Cipher.getInstance("RSA");
+    decriptCipher.init(Cipher.DECRYPT_MODE, privateKey);
+
+    return new String(decriptCipher.doFinal(bytes), UTF_8);
   }
 
-  public static String decrypt(String data, String base64PrivateKey) throws IllegalBlockSizeException, InvalidKeyException, BadPaddingException, NoSuchAlgorithmException, NoSuchPaddingException {
-    return decrypt(Base64.getDecoder().decode(data.getBytes()), getPrivateKey(base64PrivateKey));
+  public static String publicKeyToString(PublicKey publicKey) {
+    byte[] byte_pubkey = publicKey.getEncoded();
+    String str_key = Base64.getEncoder().encodeToString(byte_pubkey);
+    return str_key;
   }
 
   public static PublicKey getPemPublicKey(String fileKeyPath, String algorithm) throws Exception {

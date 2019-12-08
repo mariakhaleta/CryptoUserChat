@@ -14,8 +14,8 @@ public class Client {
   private String password; // password
   private int port; // port
   private PrivateKey privateKey;
-  private PublicKey publicKey;
-  private PublicKey publicKeyServer;
+  private static PublicKey publicKey;
+  private static PublicKey publicKeyServer;
   private String publicKeyServerFilePath = "server_keys/publickey.pem";
   private String algorithmCrypto = "RSA";
 
@@ -26,7 +26,6 @@ public class Client {
     this.password = password;
     try {
       publicKeyServer = RSAUtil.getPemPublicKey(publicKeyServerFilePath, algorithmCrypto);
-      System.out.println(publicKeyServer);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -82,9 +81,9 @@ public class Client {
     System.out.println(msg);
   }
 
-  private void sendMessageToServer(ChatMessage msg) {
+  private void sendMessageToServer(ChatMessage message) {
     try {
-      sOutput.writeObject(msg);
+      sOutput.writeObject(message);
     } catch (IOException e) {
       displayMessage("Exception writing to server: " + e);
     }
@@ -128,6 +127,13 @@ public class Client {
     Client client = new Client(Constants.SERVERADRESS, Constants.PORTNUMBER, userName, userPassword);
     if (!client.start())
       return;
+
+    try {
+      String encodedClientPublicKey = RSAUtil.encrypt(RSAUtil.publicKeyToString(publicKey), publicKeyServer);
+      client.sendMessageToServer(new ChatMessage(ChatMessage.MESSAGE, encodedClientPublicKey));
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
 
     System.out.println("\nHello!");
     System.out.println("Type '@username<space>yourmessage' to send message to client");
