@@ -1,6 +1,5 @@
 import java.io.*;
 import java.net.*;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.text.SimpleDateFormat;
@@ -79,7 +78,7 @@ public class Server {
     System.out.println(time);
   }
 
-  private synchronized boolean sendMessage(String message) {
+  private synchronized boolean sendMessage(String userSender, String message) {
     String time = simpleDateFormat.format(new Date());
     String[] messageToSplit = message.split(" ", 3);
 
@@ -88,7 +87,7 @@ public class Server {
       isPrivate = true;
 
     if (isPrivate) {
-      String messageToCheck = messageToSplit[1].substring(1);
+      String receiverName = messageToSplit[1].substring(1);
       message = messageToSplit[0] + messageToSplit[2];
       String messageToSend = time + " " + message + "\n";
       boolean found = false;
@@ -96,7 +95,7 @@ public class Server {
       for (int y = clientsArrayList.size(); --y >= 0; ) {
         ClientThread clientThread = clientsArrayList.get(y);
         String check = clientThread.getUsername();
-        if (check.equals(messageToCheck)) {
+        if (check.equals(receiverName)) {
           if (!clientThread.writeMsg(messageToSend)) {
             clientsArrayList.remove(y);
             displayMessage("Disconnected Client " + clientThread.username + " removed from list.");
@@ -144,6 +143,7 @@ public class Server {
     ObjectOutputStream sOutput;
     int id;
     String username;
+    String userPublicKey;
     ChatMessage chatMessage;
     String date;
 
@@ -171,14 +171,17 @@ public class Server {
       this.username = username;
     }
 
+    public String getUserPublicKey() {
+      return userPublicKey;
+    }
+
     public void run() {
       boolean keepGoing = true;
       try {
         ChatMessage chatMessage = (ChatMessage) sInput.readObject();
         String messageWithPublicKey = chatMessage.getMessage();
-        String clientPublicKey = RSAUtil.decrypt(messageWithPublicKey, privateKeyServer);
-
-        TextFileUtils.writeToJsonListClient(username, clientPublicKey);
+        userPublicKey = messageWithPublicKey;
+        TextFileUtils.writeToJsonListClient(username, userPublicKey);
       } catch (Exception e) {
         e.printStackTrace();
       }
@@ -195,8 +198,13 @@ public class Server {
         String message = chatMessage.getMessage();
 
         switch (chatMessage.getType()) {
-          case ChatMessage.MESSAGE:
-            boolean confirmation = sendMessage(username + ": " + message);
+          case ChatMessage.CHATWITH:
+            boolean confirmation = false;
+            try {
+              confirmation = sendMessageToClient(username, username + ": " + message);
+            } catch (IOException | ClassNotFoundException e) {
+              e.printStackTrace();
+            }
             if (!confirmation) {
               String msg = " *** " + "Sorry. No such user exists." + " *** ";
               writeMsg(msg);
@@ -211,14 +219,56 @@ public class Server {
             }
             break;
 
-          case ChatMessage.exit:
+          case ChatMessage.EXIT:
             displayMessage(username + " disconnected with a LOGOUT message.");
             keepGoing = false;
             break;
+
+          case ChatMessage.SECRETMESSAGE:
+            displayMessage(message);
         }
       }
       remove(id);
       close();
+    }
+
+    private synchronized boolean sendMessageToClient(String userSender, String message) throws IOException, ClassNotFoundException {
+      String[] segments = message.split("@");
+      String receiverName = segments[segments.length-1];
+      boolean found = false;
+
+      String encryptedMessage = null;
+      for (int y = 0; y < clientsArrayList.size(); y++) {
+        ClientThread clientThread = clientsArrayList.get(y);
+        String checkUserName = clientThread.getUsername();
+        if (checkUserName.equals(receiverName)) {
+          y = 0;
+          if(checkUserName.equals(userSender)) {
+            clientThread.writeMsg("Public key receiver: " + clientThread.getUserPublicKey());
+            ChatMessage chatMessage = (ChatMessage) sInput.readObject();
+            encryptedMessage = chatMessage.getMessage();
+          }
+          break;
+        }
+      }
+
+      for (ClientThread clientThread : clientsArrayList) {
+        String checkUserName = clientThread.getUsername();
+        if (checkUserName.equals(receiverName)) {
+          clientThread.writeMsg("Encrypted message with session key: " + encryptedMessage);
+          clientThread.writeMsg("Client @" + userSender + " start with you new conversation.");
+        }
+      }
+
+      for (ClientThread clientThread : clientsArrayList) {
+        String checkUserName = clientThread.getUsername();
+        if (checkUserName.equals(userSender)) {
+            ChatMessage chatMessage = (ChatMessage) sInput.readObject();
+            String messageToSend = "Encrypted message: " + chatMessage.getMessage();
+            clientThread.writeMsg(messageToSend);
+        }
+      }
+      return found;
     }
 
     private void close() {

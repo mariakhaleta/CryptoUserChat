@@ -1,31 +1,32 @@
+import javax.crypto.SecretKey;
 import java.net.*;
 import java.io.*;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.spec.InvalidKeySpecException;
 import java.util.*;
 
 public class Client {
-  private ObjectInputStream sInput;    // to read from the socket
+  private static ObjectInputStream sInput;    // to read from the socket
   private ObjectOutputStream sOutput;    // to write on the socket
   private Socket socket;          // socket object
 
   private String server, username;  // server and username
-  private String password; // password
   private int port; // port
-  private PrivateKey privateKey;
   private static PublicKey publicKey;
-  private static PublicKey publicKeyServer;
-  private String publicKeyServerFilePath = "server_keys/publickey.pem";
-  private String algorithmCrypto = "RSA";
+  private static PrivateKey privateKey;
+  private static Client client = null;
+  private SecretKey sessionKey = null;
 
   private Client(String server, int port, String username, String password) {
     this.server = server;
     this.port = port;
     this.username = username;
-    this.password = password;
     try {
-      publicKeyServer = RSAUtil.getPemPublicKey(publicKeyServerFilePath, algorithmCrypto);
+      String algorithmCrypto = "RSA";
+      String publicKeyServerFilePath = "server_keys/publickey.pem";
+      PublicKey publicKeyServer = RSAUtil.getPemPublicKey(publicKeyServerFilePath, algorithmCrypto);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -99,7 +100,11 @@ public class Client {
     }
   }
 
-  public static void main(String[] args) {
+  public static void main(String args[]) {
+    Client.createNewClient();
+  }
+
+  public static void createNewClient() {
     Scanner scan = new Scanner(System.in);
     System.out.println("Hello, type 'LOGIN' if you have account");
     System.out.println("or type 'SIGNUP' to create account ");
@@ -124,35 +129,91 @@ public class Client {
     String password = scan.nextLine();
     userPassword = Utils.sha256(password + "." + Constants.SALT);
 
-    Client client = new Client(Constants.SERVERADRESS, Constants.PORTNUMBER, userName, userPassword);
+    client = new Client(Constants.SERVERADRESS, Constants.PORTNUMBER, userName, userPassword);
     if (!client.start())
       return;
 
     try {
-      String encodedClientPublicKey = RSAUtil.encrypt(RSAUtil.publicKeyToString(publicKey), publicKeyServer);
-      client.sendMessageToServer(new ChatMessage(ChatMessage.MESSAGE, encodedClientPublicKey));
+      client.sendMessageToServer(new ChatMessage(ChatMessage.MESSAGE, RSAUtil.publicKeyToString(publicKey)));
     } catch (Exception e) {
       e.printStackTrace();
     }
 
     System.out.println("\nHello!");
-    System.out.println("Type '@username<space>yourmessage' to send message to client");
+    System.out.println("Type 'CHATWITH <space> @username' to send private message to client");
     System.out.println("Type 'CLIENTSONLINE' to see who is online");
-    System.out.println("Type 'exit' logoff from server");
+    System.out.println("Type 'EXIT' logoff from server");
 
     while (true) {
       String msg = scan.nextLine();
-      if (msg.equalsIgnoreCase("LOGOUT")) {
-        client.sendMessageToServer(new ChatMessage(ChatMessage.exit, ""));
+      if (msg.equalsIgnoreCase("EXIT")) {
+        client.sendMessageToServer(new ChatMessage(ChatMessage.EXIT, ""));
         break;
-      } else if (msg.equalsIgnoreCase("WHOISIN")) {
+      } else if (msg.equalsIgnoreCase("CLIENTSONLINE")) {
         client.sendMessageToServer(new ChatMessage(ChatMessage.CLIENTSONLINE, ""));
       } else {
-        client.sendMessageToServer(new ChatMessage(ChatMessage.MESSAGE, msg));
+        client.sendMessageToServer(new ChatMessage(ChatMessage.CHATWITH, msg));
       }
     }
     scan.close();
     client.disconnect();
+  }
+
+  private void generateSessionKey(String messageWithKey) {
+    String[] segments = messageWithKey.split(":");
+    String publicKeyStringReceiver = segments[segments.length - 1];
+    PublicKey publicKeyReceiver = null;
+    try {
+      publicKeyReceiver = RSAUtil.getPublicKey(publicKeyStringReceiver);
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+      e.printStackTrace();
+    }
+    String sessionKey = AESKeyGenerator.generateSecretKey();
+    try {
+      String encryptByReceiver = RSAUtil.encrypt(sessionKey, publicKeyReceiver);
+      client.sendMessageToServer(new ChatMessage(ChatMessage.MESSAGE, encryptByReceiver));
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  private void saveSessionKey(String messageWithSessionKey) {
+    String[] segments = messageWithSessionKey.split(":");
+    String encryptedMessage = segments[segments.length - 1];
+    String sessionKeyString = null;
+    try {
+      sessionKeyString = RSAUtil.decrypt(encryptedMessage, privateKey);
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+    sessionKey = AESKeyGenerator.getSecretKey(sessionKeyString);
+  }
+
+  private void startNewSecretChat() {
+    Scanner scanner = new Scanner(System.in);
+    System.out.println("Type your message\n");
+    String msg = scanner.nextLine();
+    String stringEncryptedSessionKey = null;
+    try {
+      System.out.println(sessionKey.toString());
+      stringEncryptedSessionKey = AESUtil.encrypt(msg, sessionKey);
+      System.out.println(stringEncryptedSessionKey);
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+    client.sendMessageToServer(new ChatMessage(ChatMessage.SECRETMESSAGE, stringEncryptedSessionKey));
+  }
+
+  private void decryptMessage(String message) {
+    try {
+      String[] segments = message.split(":");
+      String encryptedMessage = segments[segments.length - 1];
+      String finalMessage = AESUtil.decrypt(encryptedMessage, sessionKey);
+      System.out.println(finalMessage);
+      startNewSecretChat();
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
   }
 
   class ListenFromServer extends Thread {
@@ -160,8 +221,20 @@ public class Client {
       while (true) {
         try {
           String msg = (String) sInput.readObject();
-          System.out.println(msg);
-          System.out.print("> ");
+          if (msg.contains("Public key receiver")) {
+            generateSessionKey(msg);
+          } else if (msg.contains("Encrypted message with session key")) {
+            saveSessionKey(msg);
+          } else if (msg.contains("Client @")) {
+            System.out.println(msg);
+            startNewSecretChat();
+          } else if (msg.contains("Encrypted message")) {
+            System.out.println(msg);
+            decryptMessage(msg);
+          } else {
+            System.out.println(msg);
+            System.out.print("> ");
+          }
         } catch (IOException ex) {
           displayMessage(" *** " + "Server has closed the connection: " + ex + " *** ");
           break;
