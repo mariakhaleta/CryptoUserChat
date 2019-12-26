@@ -264,7 +264,9 @@ public class Server {
         String checkUserName = clientThread.getUsername();
         if (checkUserName.equals(userSender)) {
             ChatMessage chatMessage = (ChatMessage) sInput.readObject();
-            String messageToSend = "Encrypted message: " + chatMessage.getMessage();
+            String chatMessageFrom = chatMessage.getMessage();
+            String messageToSend = "Encrypted message: " + chatMessageFrom;
+            System.out.println(messageToSend);
             clientThread.writeMsg(messageToSend);
         }
       }

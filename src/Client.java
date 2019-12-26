@@ -180,6 +180,7 @@ public class Client {
   private void saveSessionKey(String messageWithSessionKey) {
     String[] segments = messageWithSessionKey.split(":");
     String encryptedMessage = segments[segments.length - 1];
+    System.out.println(encryptedMessage);
     String sessionKeyString = null;
     try {
       sessionKeyString = RSAUtil.decrypt(encryptedMessage, privateKey);
@@ -191,13 +192,11 @@ public class Client {
 
   private void startNewSecretChat() {
     Scanner scanner = new Scanner(System.in);
-    System.out.println("Type your message\n");
+    System.out.println("Type your message: \n");
     String msg = scanner.nextLine();
     String stringEncryptedSessionKey = null;
     try {
-      System.out.println(sessionKey.toString());
       stringEncryptedSessionKey = AESUtil.encrypt(msg, sessionKey);
-      System.out.println(stringEncryptedSessionKey);
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -208,9 +207,9 @@ public class Client {
     try {
       String[] segments = message.split(":");
       String encryptedMessage = segments[segments.length - 1];
+      System.out.println("encryptedMessage" + encryptedMessage);
       String finalMessage = AESUtil.decrypt(encryptedMessage, sessionKey);
       System.out.println(finalMessage);
-      startNewSecretChat();
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -229,7 +228,6 @@ public class Client {
             System.out.println(msg);
             startNewSecretChat();
           } else if (msg.contains("Encrypted message")) {
-            System.out.println(msg);
             decryptMessage(msg);
           } else {
             System.out.println(msg);
